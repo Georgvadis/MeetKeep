@@ -6,6 +6,10 @@
 
 Запустите `build-mac.command`, затем откройте `dist/Vidloader.app`. Python, yt-dlp и FFmpeg будут внутри приложения. Сборка предназначена для Mac с процессором Apple Silicon. Для входа на защищённые сайты выберите браузер, в котором вы уже авторизованы.
 
+## Автономное приложение для Windows
+
+Готовый `Vidloader.exe` можно скачать из артефактов успешного запуска [GitHub Actions](https://github.com/Georgvadis/Vidloader/actions/workflows/windows.yml). Он содержит Python, yt-dlp и FFmpeg; устанавливать их для запуска не нужно. Для самостоятельной сборки на Windows запустите `build-windows.bat`.
+
 ## Запуск из исходников на Mac
 
 1. Установите [Homebrew](https://brew.sh/) и выполните `brew install python@3.14 ffmpeg`.
