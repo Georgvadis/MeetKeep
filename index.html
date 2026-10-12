@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Загрузка видео</title>
+  <style>
+    :root { color-scheme: dark; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: #edf5f1; background: #0c1214; }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 28px 16px; }
+    main { width: min(660px, 100%); background: #172023; border: 1px solid #2a393b; border-radius: 20px; box-shadow: 0 16px 50px #0005; padding: 32px; }
+    h1 { margin: 0 0 7px; font-size: 28px; letter-spacing: -.04em; }
+    p { margin: 0; color: #a9bab3; line-height: 1.5; }
+    label { display: block; font-size: 14px; font-weight: 650; margin: 18px 0 7px; }
+    input, select { width: 100%; padding: 12px 13px; border: 1px solid #3a4a4b; border-radius: 10px; background: #202b2d; color: #edf5f1; font: inherit; outline: none; }
+    input:focus, select:focus { border-color: #38c784; box-shadow: 0 0 0 3px #38c78433; }
+    .row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    .check { display: flex; gap: 10px; align-items: flex-start; margin-top: 22px; font-weight: 500; line-height: 1.4; }
+    .check input { width: 18px; height: 18px; margin: 1px 0 0; accent-color: #38c784; flex: none; }
+    .actions { display: flex; gap: 10px; margin-top: 25px; }
+    button { border: 0; border-radius: 10px; padding: 12px 18px; font: inherit; font-weight: 650; cursor: pointer; }
+    #start { background: #2ebf79; color: #082115; flex: 1; }
+    #start:hover { background: #42d38c; }
+    #stop { background: #2a383a; color: #e0ebe5; }
+    button:disabled { cursor: not-allowed; opacity: .5; }
+    .status { margin-top: 25px; padding: 17px; background: #1d292a; border: 1px solid #304143; border-radius: 12px; }
+    .status strong { display: block; font-size: 15px; margin-bottom: 5px; }
+    .bar { height: 8px; background: #354744; border-radius: 10px; overflow: hidden; margin-top: 14px; }
+    .bar > div { height: 100%; width: 0; background: #38c784; transition: width .2s; }
+    #meta, #filename { font-size: 12px; margin-top: 8px; overflow-wrap: anywhere; }
+    .foot { display: flex; justify-content: flex-end; margin-top: 18px; }
+    .foot button { background: transparent; color: #a9bab3; font-size: 12px; padding: 3px; font-weight: 500; }
+    @media (max-width: 520px) { main { padding: 23px; } .row { grid-template-columns: 1fr; gap: 0; } .actions { flex-direction: column; } }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Загрузка видео</h1>
+    <form id="form">
+      <label for="url">Ссылка на видео</label>
+      <input id="url" type="url" placeholder="https://…" autocomplete="off" required autofocus>
+      <div class="row">
+        <div>
+          <label for="browser">Вход через браузер</label>
+          <select id="browser">
+            <option value="chrome">Chrome</option>
+            <option value="edge">Edge</option>
+            <option value="firefox">Firefox</option>
+            <option value="safari">Safari (macOS)</option>
+            <option value="brave">Brave</option>
+            <option value="none">Не требуется</option>
+          </select>
+        </div>
+        <div>
+          <label for="quality">Качество</label>
+          <select id="quality">
+            <option value="best">Лучшее доступное</option>
+            <option value="1080">До 1080p</option>
+            <option value="720">До 720p</option>
+            <option value="480">До 480p</option>
+            <option value="360">До 360p</option>
+          </select>
+        </div>
+      </div>
+      <label for="folder">Папка сохранения</label>
+      <input id="folder" type="text" value="~/Downloads" required>
+      <label class="check"><input id="insecure" type="checkbox"><span>Пропустить проверку сертификата</span></label>
+      <div class="actions">
+        <button id="start" type="submit">Скачать видео</button>
+        <button id="stop" type="button" disabled>Остановить</button>
+      </div>
+    </form>
+    <div class="status" aria-live="polite">
+      <strong id="stage">Готово к загрузке</strong>
+      <p id="message"></p>
+      <div class="bar"><div id="bar"></div></div>
+      <p id="meta"></p>
+      <p id="filename"></p>
+    </div>
+    <div class="foot"><button id="close" type="button">Закрыть приложение</button></div>
+  </main>
+  <script>
+    const token = "__APP_TOKEN__";
+    const $ = id => document.getElementById(id);
+    const active = new Set(["connecting", "downloading", "processing"]);
+    let closed = false;
+    const saved = JSON.parse(localStorage.getItem("video-downloader-settings") || "{}");
+    for (const key of ["browser", "quality", "folder"]) if (saved[key]) $(key).value = saved[key];
+    async function api(path, data) {
+      const response = await fetch(path, {
+        method: data === undefined ? "GET" : "POST",
+        headers: {"X-App-Token": token, "Content-Type": "application/json"},
+        body: data === undefined ? undefined : JSON.stringify(data)
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Ошибка приложения");
+      return result;
+    }
+    async function refresh() {
+      if (closed) return;
+      try {
+        const state = await api("/api/status");
+        const busy = active.has(state.stage);
+        $("start").disabled = busy;
+        $("stop").disabled = !busy;
+        $("stage").textContent = ({idle: "Готово к загрузке", connecting: "Подключение", downloading: "Скачивание", processing: "Обработка", done: "Готово", cancelled: "Остановлено", error: "Ошибка"})[state.stage] || state.stage;
+        $("message").textContent = state.message || "";
+        $("bar").style.width = `${Math.max(0, Math.min(100, state.percent || 0))}%`;
+        $("meta").textContent = [state.bytes_text, state.speed].filter(Boolean).join(" · ");
+        $("filename").textContent = state.stage === "done" ? state.filename || "" : "";
+      } catch (error) {
+        if (!closed) $("message").textContent = error.message;
+      }
+    }
+    $("form").addEventListener("submit", async event => {
+      event.preventDefault();
+      const data = {
+        url: $("url").value.trim(), browser: $("browser").value,
+        quality: $("quality").value, folder: $("folder").value.trim(),
+        insecure: $("insecure").checked
+      };
+      localStorage.setItem("video-downloader-settings", JSON.stringify({browser: data.browser, quality: data.quality, folder: data.folder}));
+      try { await api("/api/start", data); await refresh(); }
+      catch (error) { $("stage").textContent = "Ошибка"; $("message").textContent = error.message; }
+    });
+    $("stop").addEventListener("click", async () => { try { await api("/api/cancel", {}); } catch (error) { $("message").textContent = error.message; } });
+    $("close").addEventListener("click", async () => {
+      try { await api("/api/shutdown", {}); closed = true; $("stage").textContent = "Приложение закрыто"; $("message").textContent = "Эту вкладку можно закрыть."; }
+      catch (error) { $("message").textContent = error.message; }
+    });
+    refresh(); setInterval(refresh, 900);
+  </script>
+</body>
+</html>
