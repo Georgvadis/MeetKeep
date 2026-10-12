@@ -2,13 +2,15 @@
 
 Локальное приложение для macOS и Windows. Вставьте ссылку, выберите браузер с уже открытым доступом к сайту и нажмите «Скачать видео». Записи СберВидео вида `/meetups/…` приложение само переводит в адрес видеопотока. Для других сайтов работает всё, что поддерживает [yt-dlp](https://github.com/yt-dlp/yt-dlp/blob/master/supportedsites.md). Защищённые DRM потоки и сайты, которые не поддерживает yt-dlp, не скачиваются.
 
+Готовые приложения для Windows x64 и Mac с Apple Silicon находятся в [Releases](https://github.com/Georgvadis/Vidloader/releases/latest). Распакуйте ZIP-архив для своей системы и запустите приложение. Python и FFmpeg отдельно устанавливать не нужно.
+
 ## Автономное приложение для Mac
 
 Запустите `build-mac.command`, затем откройте `dist/Vidloader.app`. Python, yt-dlp и FFmpeg будут внутри приложения. Сборка предназначена для Mac с процессором Apple Silicon. Для входа на защищённые сайты выберите браузер, в котором вы уже авторизованы.
 
 ## Автономное приложение для Windows
 
-Готовый `Vidloader.exe` можно скачать из артефактов успешного запуска [GitHub Actions](https://github.com/Georgvadis/Vidloader/actions/workflows/windows.yml). Он содержит Python, yt-dlp и FFmpeg; устанавливать их для запуска не нужно. Для самостоятельной сборки на Windows запустите `build-windows.bat`.
+Готовый `Vidloader.exe` находится в Windows-архиве на странице [Releases](https://github.com/Georgvadis/Vidloader/releases/latest). Он содержит Python, yt-dlp и FFmpeg; устанавливать их для запуска не нужно. Для самостоятельной сборки на Windows запустите `build-windows.bat`.
 
 ## Запуск из исходников на Mac
 
