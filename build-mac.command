@@ -7,5 +7,5 @@ FFMPEG_PATH="$(.venv/bin/python -c 'import imageio_ffmpeg; print(imageio_ffmpeg.
 mkdir -p .ffmpeg-bundle
 cp "$FFMPEG_PATH" .ffmpeg-bundle/ffmpeg
 .venv/bin/python -m PyInstaller --noconfirm --clean --onedir --windowed \
-  --name "Загрузка видео" --add-data "index.html:." --add-binary ".ffmpeg-bundle/ffmpeg:." sbervideo_downloader.py
-echo "Приложение: dist/Загрузка видео.app"
+  --name "Vidloader" --add-data "index.html:." --add-binary ".ffmpeg-bundle/ffmpeg:." sbervideo_downloader.py
+echo "Приложение: dist/Vidloader.app"
