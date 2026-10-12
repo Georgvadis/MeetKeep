@@ -28,6 +28,11 @@
     .bar { height: 8px; background: #354744; border-radius: 10px; overflow: hidden; margin-top: 14px; }
     .bar > div { height: 100%; width: 0; background: #38c784; transition: width .2s; }
     #meta, #filename { font-size: 12px; margin-top: 8px; overflow-wrap: anywhere; }
+    .chrome { padding: 14px 16px; border: 1px solid #304143; border-radius: 12px; background: #1d292a; margin: 18px 0 4px; }
+    .chrome p { font-size: 14px; }
+    .chrome button { background: transparent; color: #62daa0; padding: 5px 0 0; font-size: 13px; }
+    #extension-help { margin-top: 10px; }
+    #extension-folder { color: #edf5f1; overflow-wrap: anywhere; user-select: all; }
     .foot { display: flex; justify-content: flex-end; margin-top: 18px; }
     .foot button { background: transparent; color: #a9bab3; font-size: 12px; padding: 3px; font-weight: 500; }
     @media (max-width: 520px) { main { padding: 23px; } .row { grid-template-columns: 1fr; gap: 0; } .actions { flex-direction: column; } }
@@ -36,6 +41,15 @@
 <body>
   <main>
     <h1>Vidloader</h1>
+    <div class="chrome">
+      <p><strong>Chrome:</strong> откройте видео и нажмите значок Vidloader в браузере.</p>
+      <button id="extension-setup" type="button">Настроить расширение</button>
+      <div id="extension-help" hidden>
+        <p>В Chrome включите «Режим разработчика», нажмите «Загрузить распакованное расширение» и выберите эту папку:</p>
+        <p id="extension-folder"></p>
+        <button id="copy-extension-folder" type="button">Скопировать путь</button>
+      </div>
+    </div>
     <form id="form">
       <label for="url">Ссылка на видео</label>
       <input id="url" type="url" placeholder="https://…" autocomplete="off" required autofocus>
@@ -88,9 +102,12 @@
     const token = "__APP_TOKEN__";
     const $ = id => document.getElementById(id);
     const active = new Set(["connecting", "downloading", "processing"]);
+    const windows = navigator.userAgent.includes("Windows");
     let closed = false;
     const saved = JSON.parse(localStorage.getItem("video-downloader-settings") || "{}");
     for (const key of ["browser", "quality", "folder"]) if (saved[key]) $(key).value = saved[key];
+    $("browser").querySelector('[value="chrome"]').hidden = windows;
+    if (windows && (!saved.browser || saved.browser === "chrome")) $("browser").value = "none";
     function updateCookieField() {
       const enabled = $("browser").value === "cookies";
       $("cookie-row").hidden = !enabled;
@@ -108,6 +125,24 @@
       if (!response.ok) throw new Error(result.error || "Ошибка приложения");
       return result;
     }
+    async function syncSettings() {
+      try {
+        await api("/api/settings", {quality: $("quality").value, folder: $("folder").value.trim(), insecure: $("insecure").checked});
+      } catch (_) {}
+    }
+    for (const key of ["quality", "folder", "insecure"]) $(key).addEventListener("change", syncSettings);
+    $("extension-setup").addEventListener("click", async () => {
+      try {
+        const {folder} = await api("/api/extension/setup");
+        $("extension-folder").textContent = folder;
+        $("extension-help").hidden = false;
+        await api("/api/extension/open-setup", {});
+      } catch (error) { $("message").textContent = error.message; }
+    });
+    $("copy-extension-folder").addEventListener("click", async () => {
+      await navigator.clipboard.writeText($("extension-folder").textContent);
+      $("copy-extension-folder").textContent = "Скопировано";
+    });
     async function refresh() {
       if (closed) return;
       try {
@@ -141,6 +176,7 @@
         data.cookie_text = await file.text();
       }
       localStorage.setItem("video-downloader-settings", JSON.stringify({browser: data.browser, quality: data.quality, folder: data.folder}));
+      await syncSettings();
       try { await api("/api/start", data); await refresh(); }
       catch (error) { $("stage").textContent = "Ошибка"; $("message").textContent = error.message; }
     });
@@ -149,7 +185,7 @@
       try { await api("/api/shutdown", {}); closed = true; $("stage").textContent = "Приложение закрыто"; $("message").textContent = "Эту вкладку можно закрыть."; }
       catch (error) { $("message").textContent = error.message; }
     });
-    refresh(); setInterval(refresh, 900);
+    syncSettings(); refresh(); setInterval(refresh, 900);
   </script>
 </body>
 </html>

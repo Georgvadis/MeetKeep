@@ -4,7 +4,10 @@
 from __future__ import annotations
 
 import json
+import hashlib
+import hmac
 import os
+import re
 import secrets
 import shutil
 import subprocess
@@ -26,7 +29,10 @@ except ImportError:
 APP_DIR = Path(__file__).resolve().parent
 HTML = (APP_DIR / "index.html").read_bytes()
 TOKEN = secrets.token_urlsafe(32)
+PAIR_KEY = ""
+EXTENSION_DIR = Path()
 LOCK = threading.Lock()
+SETTINGS = {"quality": "best", "folder": "~/Downloads", "insecure": False}
 STATE: dict = {
     "stage": "idle",
     "message": "Готово к загрузке",
@@ -40,6 +46,37 @@ CANCEL = threading.Event()
 
 class DownloadCancelled(Exception):
     pass
+
+
+def prepare_chrome_extension() -> Path:
+    global PAIR_KEY, EXTENSION_DIR
+    if sys.platform == "win32":
+        config_dir = Path(os.environ.get("APPDATA", str(Path.home()))) / "Vidloader"
+    elif sys.platform == "darwin":
+        config_dir = Path.home() / "Library" / "Application Support" / "Vidloader"
+    else:
+        config_dir = Path.home() / ".config" / "Vidloader"
+    config_dir.mkdir(parents=True, exist_ok=True)
+    secret_file = config_dir / "chrome-pair-key"
+    if secret_file.exists():
+        key = secret_file.read_text(encoding="ascii").strip()
+        if not re.fullmatch(r"[a-f0-9]{64}", key):
+            raise RuntimeError("Повреждён ключ подключения Chrome")
+    else:
+        key = secrets.token_hex(32)
+        with secret_file.open("x", encoding="ascii") as stream:
+            stream.write(key + "\n")
+        os.chmod(secret_file, 0o600)
+    extension_dir = config_dir / "Chrome extension"
+    extension_dir.mkdir(exist_ok=True)
+    for name in ("manifest.json", "background.js"):
+        shutil.copy2(APP_DIR / "chrome_extension" / name, extension_dir / name)
+    config_file = extension_dir / "config.js"
+    config_file.write_text(f'export const PAIR_KEY = "{key}";\n', encoding="ascii")
+    os.chmod(config_file, 0o600)
+    PAIR_KEY = key
+    EXTENSION_DIR = extension_dir
+    return extension_dir
 
 
 def update(**changes: object) -> None:
@@ -188,8 +225,8 @@ def download(payload: dict) -> None:
         update(stage="cancelled", message="Загрузка остановлена")
     except Exception as exc:
         message = str(exc)
-        if sys.platform == "win32" and "Could not copy Chrome cookie database" in message:
-            message = "Закройте Chrome полностью, включая фоновые процессы, и повторите загрузку"
+        if sys.platform == "win32" and ("Could not copy Chrome cookie database" in message or "Failed to decrypt with DPAPI" in message):
+            message = "Chrome не отдаёт cookies напрямую. Используйте расширение Vidloader в Chrome"
         update(stage="error", message=message)
     finally:
         if cookie_dir is not None:
@@ -206,6 +243,8 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Cache-Control", "no-store")
         self.send_header("X-Content-Type-Options", "nosniff")
+        if self.path.startswith("/api/extension/"):
+            self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
@@ -213,8 +252,36 @@ class Handler(BaseHTTPRequestHandler):
     def authorized(self) -> bool:
         return self.headers.get("X-App-Token") == TOKEN
 
+    def read_json(self) -> dict:
+        length = int(self.headers.get("Content-Length", "0"))
+        if length < 1 or length > 8_000_000:
+            raise ValueError("Слишком большой запрос")
+        payload = json.loads(self.rfile.read(length))
+        if not isinstance(payload, dict):
+            raise ValueError("Некорректные данные")
+        return payload
+
+    def do_OPTIONS(self) -> None:
+        if not self.path.startswith("/api/extension/"):
+            self.respond(404, {"error": "Не найдено"})
+            return
+        self.send_response(204)
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type, X-Vidloader-Pair-Key")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        self.send_header("Content-Length", "0")
+        self.end_headers()
+
     def do_GET(self) -> None:
-        if self.path == "/":
+        if self.path.startswith("/api/extension/challenge?"):
+            query = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
+            nonce = query.get("nonce", [""])[0]
+            if not re.fullmatch(r"[a-f0-9]{32}", nonce):
+                self.respond(400, {"error": "Некорректный запрос"})
+                return
+            proof = hmac.new(bytes.fromhex(PAIR_KEY), nonce.encode("ascii"), hashlib.sha256).hexdigest()
+            self.respond(200, {"proof": proof})
+        elif self.path == "/":
             body = HTML.replace(b"__APP_TOKEN__", TOKEN.encode())
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
@@ -226,12 +293,38 @@ class Handler(BaseHTTPRequestHandler):
             self.wfile.write(body)
         elif self.path == "/api/status" and self.authorized():
             self.respond(200, snapshot())
+        elif self.path == "/api/extension/setup" and self.authorized():
+            self.respond(200, {"folder": str(EXTENSION_DIR)})
         else:
             self.respond(404, {"error": "Не найдено"})
 
     def do_POST(self) -> None:
-        if not self.authorized():
+        from_extension = self.path == "/api/extension/start"
+        if from_extension:
+            if not PAIR_KEY or not hmac.compare_digest(self.headers.get("X-Vidloader-Pair-Key", ""), PAIR_KEY):
+                self.respond(403, {"error": "Нет доступа"})
+                return
+        elif not self.authorized():
             self.respond(403, {"error": "Нет доступа"})
+            return
+        if self.path == "/api/extension/open-setup":
+            self.respond(200, {"ok": True})
+            threading.Thread(target=open_chrome_setup, daemon=True).start()
+            return
+        if self.path == "/api/settings":
+            try:
+                values = self.read_json()
+                if values.get("quality") not in ("best", "1080", "720", "480", "360"):
+                    raise ValueError("Неизвестное качество")
+                if not isinstance(values.get("folder"), str) or not values["folder"].strip():
+                    raise ValueError("Укажите папку сохранения")
+                if not isinstance(values.get("insecure"), bool):
+                    raise ValueError("Некорректная настройка сертификата")
+                with LOCK:
+                    SETTINGS.update(quality=values["quality"], folder=values["folder"], insecure=values["insecure"])
+                self.respond(200, {"ok": True})
+            except (ValueError, TypeError, json.JSONDecodeError) as exc:
+                self.respond(400, {"error": str(exc)})
             return
         if self.path == "/api/shutdown":
             if snapshot()["stage"] in ("connecting", "downloading", "processing"):
@@ -244,16 +337,18 @@ class Handler(BaseHTTPRequestHandler):
             CANCEL.set()
             self.respond(200, {"ok": True})
             return
-        if self.path != "/api/start":
+        if self.path not in ("/api/start", "/api/extension/start"):
             self.respond(404, {"error": "Не найдено"})
             return
         try:
-            length = int(self.headers.get("Content-Length", "0"))
-            if length < 1 or length > 8_000_000:
-                raise ValueError("Слишком большой запрос")
-            payload = json.loads(self.rfile.read(length))
-            if not isinstance(payload, dict):
-                raise ValueError("Некорректные данные")
+            payload = self.read_json()
+            if from_extension:
+                cookie_text = payload.get("cookie_text")
+                if not isinstance(cookie_text, str) or len(cookie_text) > 4_000_000 or not cookie_text.startswith("# Netscape HTTP Cookie File\n"):
+                    raise ValueError("Некорректные cookies")
+                with LOCK:
+                    settings = dict(SETTINGS)
+                payload = {"url": payload.get("url"), "browser": "cookies" if cookie_text.strip() != "# Netscape HTTP Cookie File" else "none", "cookie_text": cookie_text, **settings}
             normalize_url(str(payload.get("url", "")))
             if not isinstance(payload.get("insecure"), bool):
                 raise ValueError("Некорректная настройка сертификата")
@@ -295,8 +390,32 @@ def open_interface(address: str) -> None:
     webbrowser.open(address)
 
 
+def open_chrome_setup() -> None:
+    candidates = [shutil.which("chrome"), shutil.which("google-chrome")]
+    if sys.platform == "win32":
+        for root in (os.environ.get("PROGRAMFILES"), os.environ.get("PROGRAMFILES(X86)"), os.environ.get("LOCALAPPDATA")):
+            if root:
+                candidates.append(str(Path(root) / "Google" / "Chrome" / "Application" / "chrome.exe"))
+    elif sys.platform == "darwin":
+        candidates.extend(("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome", str(Path.home() / "Applications/Google Chrome.app/Contents/MacOS/Google Chrome")))
+    for candidate in candidates:
+        if candidate and Path(candidate).is_file():
+            subprocess.Popen([candidate, "chrome://extensions/"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            return
+    webbrowser.open("chrome://extensions/")
+
+
 def main() -> None:
-    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    prepare_chrome_extension()
+    server = None
+    for port in range(8765, 8785):
+        try:
+            server = ThreadingHTTPServer(("127.0.0.1", port), Handler)
+            break
+        except OSError:
+            continue
+    if server is None:
+        raise RuntimeError("Нет свободного локального порта для Vidloader")
     port = server.server_address[1]
     address = f"http://127.0.0.1:{port}/"
     print(f"Откройте приложение: {address}")

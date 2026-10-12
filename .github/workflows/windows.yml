@@ -10,6 +10,7 @@ on:
       - index.html
       - requirements.txt
       - sbervideo_downloader.py
+      - chrome_extension/**
 
 jobs:
   build:
