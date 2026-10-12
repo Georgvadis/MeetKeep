@@ -8,6 +8,7 @@ import os
 import secrets
 import shutil
 import sys
+import tempfile
 import threading
 import urllib.parse
 import webbrowser
@@ -88,6 +89,7 @@ def format_selector(quality: str) -> str:
 
 
 def download(payload: dict) -> None:
+    cookie_dir = None
     try:
         url, referer = normalize_url(payload["url"])
         folder = Path(payload["folder"]).expanduser().resolve()
@@ -98,7 +100,7 @@ def download(payload: dict) -> None:
         browser = payload["browser"]
         quality = payload["quality"]
         insecure = payload["insecure"]
-        if browser not in ("none", "chrome", "edge", "firefox", "safari", "brave"):
+        if browser not in ("none", "chrome", "edge", "firefox", "safari", "brave", "cookies"):
             raise ValueError("Неизвестный браузер")
         if quality not in ("best", "1080", "720", "480", "360"):
             raise ValueError("Неизвестное качество")
@@ -157,7 +159,14 @@ def download(payload: dict) -> None:
             "quiet": True,
             "no_warnings": False,
         }
-        if browser != "none":
+        if browser == "cookies":
+            cookie_text = payload["cookie_text"]
+            cookie_dir = Path(tempfile.mkdtemp(prefix="vidloader-cookies-"))
+            cookie_file = cookie_dir / "cookies.txt"
+            cookie_file.write_bytes(cookie_text.encode("utf-8"))
+            os.chmod(cookie_file, 0o600)
+            options["cookiefile"] = str(cookie_file)
+        elif browser != "none":
             options["cookiesfrombrowser"] = (browser,)
         if ffmpeg:
             options["ffmpeg_location"] = ffmpeg
@@ -178,6 +187,9 @@ def download(payload: dict) -> None:
         update(stage="cancelled", message="Загрузка остановлена")
     except Exception as exc:
         update(stage="error", message=str(exc))
+    finally:
+        if cookie_dir is not None:
+            shutil.rmtree(cookie_dir, ignore_errors=True)
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -233,7 +245,7 @@ class Handler(BaseHTTPRequestHandler):
             return
         try:
             length = int(self.headers.get("Content-Length", "0"))
-            if length < 1 or length > 20_000:
+            if length < 1 or length > 8_000_000:
                 raise ValueError("Слишком большой запрос")
             payload = json.loads(self.rfile.read(length))
             if not isinstance(payload, dict):
@@ -241,8 +253,12 @@ class Handler(BaseHTTPRequestHandler):
             normalize_url(str(payload.get("url", "")))
             if not isinstance(payload.get("insecure"), bool):
                 raise ValueError("Некорректная настройка сертификата")
-            if payload.get("browser") not in ("none", "chrome", "edge", "firefox", "safari", "brave"):
+            if payload.get("browser") not in ("none", "chrome", "edge", "firefox", "safari", "brave", "cookies"):
                 raise ValueError("Неизвестный браузер")
+            if payload["browser"] == "cookies":
+                cookie_text = payload.get("cookie_text")
+                if not isinstance(cookie_text, str) or not cookie_text.startswith(("# HTTP Cookie File", "# Netscape HTTP Cookie File")) or len(cookie_text) > 4_000_000:
+                    raise ValueError("Выберите файл cookies.txt в формате Netscape")
             if payload.get("quality") not in ("best", "1080", "720", "480", "360"):
                 raise ValueError("Неизвестное качество")
             if not isinstance(payload.get("folder"), str) or not payload["folder"].strip():

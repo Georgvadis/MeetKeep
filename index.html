@@ -48,6 +48,7 @@
             <option value="firefox">Firefox</option>
             <option value="safari">Safari (macOS)</option>
             <option value="brave">Brave</option>
+            <option value="cookies">Файл cookies.txt (Chrome/Яндекс)</option>
             <option value="none">Не требуется</option>
           </select>
         </div>
@@ -61,6 +62,10 @@
             <option value="360">До 360p</option>
           </select>
         </div>
+      </div>
+      <div id="cookie-row" hidden>
+        <label for="cookie-file">Файл cookies.txt</label>
+        <input id="cookie-file" type="file" accept=".txt,text/plain">
       </div>
       <label for="folder">Папка сохранения</label>
       <input id="folder" type="text" value="~/Downloads" required>
@@ -86,6 +91,13 @@
     let closed = false;
     const saved = JSON.parse(localStorage.getItem("video-downloader-settings") || "{}");
     for (const key of ["browser", "quality", "folder"]) if (saved[key]) $(key).value = saved[key];
+    function updateCookieField() {
+      const enabled = $("browser").value === "cookies";
+      $("cookie-row").hidden = !enabled;
+      $("cookie-file").required = enabled;
+    }
+    $("browser").addEventListener("change", updateCookieField);
+    updateCookieField();
     async function api(path, data) {
       const response = await fetch(path, {
         method: data === undefined ? "GET" : "POST",
@@ -119,6 +131,15 @@
         quality: $("quality").value, folder: $("folder").value.trim(),
         insecure: $("insecure").checked
       };
+      if (data.browser === "cookies") {
+        const file = $("cookie-file").files[0];
+        if (!file || file.size > 4_000_000) {
+          $("stage").textContent = "Ошибка";
+          $("message").textContent = "Выберите файл cookies.txt размером до 4 МБ";
+          return;
+        }
+        data.cookie_text = await file.text();
+      }
       localStorage.setItem("video-downloader-settings", JSON.stringify({browser: data.browser, quality: data.quality, folder: data.folder}));
       try { await api("/api/start", data); await refresh(); }
       catch (error) { $("stage").textContent = "Ошибка"; $("message").textContent = error.message; }

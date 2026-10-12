@@ -25,10 +25,11 @@ jobs:
       - name: Check bundled executable
         shell: pwsh
         run: |
-          if (!(Test-Path dist/Vidloader.exe)) { throw 'Vidloader.exe was not created' }
-          Write-Host "Size: $((Get-Item dist/Vidloader.exe).Length) bytes"
+          if (!(Test-Path dist/Vidloader/Vidloader.exe)) { throw 'Vidloader.exe was not created' }
+          if (!(Test-Path dist/Vidloader/_internal/ffmpeg.exe)) { throw 'Bundled FFmpeg was not created' }
+          Write-Host "Size: $((Get-Item dist/Vidloader/Vidloader.exe).Length) bytes"
       - uses: actions/upload-artifact@v4
         with:
           name: Vidloader-Windows-x64
-          path: dist/Vidloader.exe
+          path: dist/Vidloader/
           if-no-files-found: error
