@@ -41,7 +41,7 @@
 <body>
   <main>
     <h1>Vidloader</h1>
-    <div class="chrome">
+    <div class="chrome" id="chrome-box" hidden>
       <p><strong>Chrome:</strong> откройте видео и нажмите значок Vidloader в браузере.</p>
       <button id="extension-setup" type="button">Настроить расширение</button>
       <div id="extension-help" hidden>
@@ -106,6 +106,7 @@
     let closed = false;
     const saved = JSON.parse(localStorage.getItem("video-downloader-settings") || "{}");
     for (const key of ["browser", "quality", "folder"]) if (saved[key]) $(key).value = saved[key];
+    $("chrome-box").hidden = !windows;
     $("browser").querySelector('[value="chrome"]').hidden = windows;
     if (windows && (!saved.browser || saved.browser === "chrome")) $("browser").value = "none";
     function updateCookieField() {

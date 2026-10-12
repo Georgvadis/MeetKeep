@@ -396,8 +396,6 @@ def open_chrome_setup() -> None:
         for root in (os.environ.get("PROGRAMFILES"), os.environ.get("PROGRAMFILES(X86)"), os.environ.get("LOCALAPPDATA")):
             if root:
                 candidates.append(str(Path(root) / "Google" / "Chrome" / "Application" / "chrome.exe"))
-    elif sys.platform == "darwin":
-        candidates.extend(("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome", str(Path.home() / "Applications/Google Chrome.app/Contents/MacOS/Google Chrome")))
     for candidate in candidates:
         if candidate and Path(candidate).is_file():
             subprocess.Popen([candidate, "chrome://extensions/"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -406,16 +404,19 @@ def open_chrome_setup() -> None:
 
 
 def main() -> None:
-    prepare_chrome_extension()
-    server = None
-    for port in range(8765, 8785):
-        try:
-            server = ThreadingHTTPServer(("127.0.0.1", port), Handler)
-            break
-        except OSError:
-            continue
-    if server is None:
-        raise RuntimeError("Нет свободного локального порта для Vidloader")
+    if sys.platform == "win32":
+        prepare_chrome_extension()
+        server = None
+        for port in range(8765, 8785):
+            try:
+                server = ThreadingHTTPServer(("127.0.0.1", port), Handler)
+                break
+            except OSError:
+                continue
+        if server is None:
+            raise RuntimeError("Нет свободного локального порта для Vidloader")
+    else:
+        server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
     port = server.server_address[1]
     address = f"http://127.0.0.1:{port}/"
     print(f"Откройте приложение: {address}")
