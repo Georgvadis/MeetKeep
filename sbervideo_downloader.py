@@ -7,6 +7,7 @@ import json
 import os
 import secrets
 import shutil
+import subprocess
 import sys
 import tempfile
 import threading
@@ -186,7 +187,10 @@ def download(payload: dict) -> None:
     except DownloadCancelled:
         update(stage="cancelled", message="Загрузка остановлена")
     except Exception as exc:
-        update(stage="error", message=str(exc))
+        message = str(exc)
+        if sys.platform == "win32" and "Could not copy Chrome cookie database" in message:
+            message = "Закройте Chrome полностью, включая фоновые процессы, и повторите загрузку"
+        update(stage="error", message=message)
     finally:
         if cookie_dir is not None:
             shutil.rmtree(cookie_dir, ignore_errors=True)
@@ -275,6 +279,22 @@ class Handler(BaseHTTPRequestHandler):
             self.respond(400, {"error": str(exc)})
 
 
+def open_interface(address: str) -> None:
+    if sys.platform == "win32":
+        candidates = [shutil.which("msedge")]
+        for root in (os.environ.get("PROGRAMFILES(X86)"), os.environ.get("PROGRAMFILES"), os.environ.get("LOCALAPPDATA")):
+            if root:
+                candidates.append(str(Path(root) / "Microsoft" / "Edge" / "Application" / "msedge.exe"))
+        for candidate in candidates:
+            if candidate and Path(candidate).is_file():
+                try:
+                    subprocess.Popen([candidate, f"--app={address}", "--new-window"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                    return
+                except OSError:
+                    continue
+    webbrowser.open(address)
+
+
 def main() -> None:
     server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
     port = server.server_address[1]
@@ -282,7 +302,7 @@ def main() -> None:
     print(f"Откройте приложение: {address}")
     print("Чтобы закрыть приложение, нажмите Ctrl+C в этом окне.")
     if os.environ.get("SBERVIDEO_NO_BROWSER") != "1":
-        threading.Timer(0.4, webbrowser.open, args=(address,)).start()
+        threading.Timer(0.4, open_interface, args=(address,)).start()
     try:
         server.serve_forever()
     except KeyboardInterrupt:

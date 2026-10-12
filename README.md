@@ -14,4 +14,4 @@ Vidloader — утилита для скачивания видео по ссы�
 
 Поддержка сайтов зависит от [yt-dlp](https://github.com/yt-dlp/yt-dlp/blob/master/supportedsites.md). Видео с DRM не поддерживаются.
 
-Если Windows не даёт прочитать cookies открытого Chrome или вы используете Яндекс Браузер, экспортируйте cookies в формате Netscape и выберите в приложении «Файл cookies.txt».
+На Windows Vidloader открывает интерфейс в отдельном окне Edge. Для автоматической авторизации через Chrome скопируйте ссылку, полностью закройте Chrome и выберите его в Vidloader. Если Windows всё равно не даёт прочитать cookies, можно использовать файл `cookies.txt`.
