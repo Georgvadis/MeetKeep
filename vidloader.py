@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import html
 import json
 import hashlib
 import hmac
@@ -15,12 +16,14 @@ import sys
 import tempfile
 import threading
 import urllib.parse
+import urllib.request
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 try:
     import yt_dlp
+    from websockets.sync.client import connect as websocket_connect
 except ImportError:
     print("yt-dlp is missing. Install requirements.txt first.", file=sys.stderr)
     raise SystemExit(1)
@@ -31,6 +34,10 @@ HTML = (APP_DIR / "index.html").read_bytes()
 TOKEN = secrets.token_urlsafe(32)
 PAIR_KEY = ""
 EXTENSION_DIR = Path()
+NO_PROXY = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+# Extractors that name videos after the page or playlist file (HTML5MediaEmbed also appends " (1)").
+GENERIC_EXTRACTORS = ("Generic", "HTML5MediaEmbed")
+BROWSERS = ("none", "login", "chrome", "edge", "firefox", "safari", "brave", "cookies")
 LOCK = threading.Lock()
 SETTINGS = {"quality": "best", "folder": "~/Downloads", "insecure": False}
 STATE: dict = {
@@ -48,16 +55,150 @@ class DownloadCancelled(Exception):
     pass
 
 
+def config_dir() -> Path:
+    if sys.platform == "win32":
+        path = Path(os.environ.get("APPDATA", str(Path.home()))) / "Vidloader"
+    elif sys.platform == "darwin":
+        path = Path.home() / "Library" / "Application Support" / "Vidloader"
+    else:
+        path = Path.home() / ".config" / "Vidloader"
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+LOGIN_PROFILE = config_dir() / "browser"
+
+
+def find_login_browser() -> str | None:
+    """Chrome or Edge used for the login window with Vidloader's own profile."""
+    if sys.platform == "win32":
+        candidates = []
+        for root in (os.environ.get("PROGRAMFILES"), os.environ.get("PROGRAMFILES(X86)"), os.environ.get("LOCALAPPDATA")):
+            if root:
+                candidates += [Path(root) / "Google" / "Chrome" / "Application" / "chrome.exe",
+                               Path(root) / "Microsoft" / "Edge" / "Application" / "msedge.exe"]
+    elif sys.platform == "darwin":
+        candidates = [Path(f"/Applications/{name}.app/Contents/MacOS/{name}") for name in ("Google Chrome", "Microsoft Edge", "Chromium")]
+    else:
+        candidates = [shutil.which(name) for name in ("google-chrome", "chromium", "chromium-browser", "microsoft-edge")]
+    for candidate in candidates:
+        if candidate and Path(candidate).is_file():
+            return str(candidate)
+    return None
+
+
+def login_endpoint() -> str | None:
+    """DevTools address of the running login window, read from its profile."""
+    try:
+        port, path = (LOGIN_PROFILE / "DevToolsActivePort").read_text(encoding="utf-8").splitlines()[:2]
+        if not re.fullmatch(r"/devtools/browser/[\w-]+", path):
+            return None
+        with NO_PROXY.open(f"http://127.0.0.1:{int(port)}/json/version", timeout=0.5) as response:
+            return f"ws://127.0.0.1:{int(port)}{path}" if response.status == 200 else None
+    except (OSError, ValueError):
+        return None
+
+
+def open_login_window(url: str) -> None:
+    browser = find_login_browser()
+    if not browser:
+        raise ValueError("Не найден Chrome или Edge для окна входа")
+    LOGIN_PROFILE.mkdir(parents=True, exist_ok=True)
+    # A separate profile is required: Chrome 136+ ignores remote debugging for the default one.
+    subprocess.Popen(
+        [browser, f"--user-data-dir={LOGIN_PROFILE}", "--remote-debugging-port=0",
+         "--no-first-run", "--no-default-browser-check", url],
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+    )
+
+
+def login_cookies() -> str:
+    """Export cookies of the login window as a Netscape cookies.txt text."""
+    endpoint = login_endpoint()
+    if not endpoint:
+        raise ValueError("Окно входа закрыто. Нажмите «Открыть окно входа», войдите на сайт и повторите")
+    with websocket_connect(endpoint, proxy=None, max_size=None, open_timeout=5) as socket:
+        socket.send(json.dumps({"id": 1, "method": "Storage.getCookies"}))
+        while True:
+            reply = json.loads(socket.recv(timeout=10))
+            if reply.get("id") == 1:
+                break
+    if "result" not in reply:
+        raise ValueError("Не удалось получить cookies из окна входа")
+    lines = ["# Netscape HTTP Cookie File"]
+    for cookie in reply["result"].get("cookies", []):
+        domain, path, name, value = (str(cookie.get(key, "")) for key in ("domain", "path", "name", "value"))
+        if not domain or any(ch in field for field in (domain, path, name, value) for ch in "\t\r\n"):
+            continue
+        lines.append("\t".join([
+            ("#HttpOnly_" if cookie.get("httpOnly") else "") + domain,
+            "TRUE" if domain.startswith(".") else "FALSE",
+            path or "/",
+            "TRUE" if cookie.get("secure") else "FALSE",
+            str(max(0, int(cookie.get("expires") or 0))),
+            name, value,
+        ]))
+    return "\n".join(lines) + "\n"
+
+
+def same_page(first: str, second: str) -> bool:
+    a, b = urllib.parse.urlsplit(first), urllib.parse.urlsplit(second)
+    return (a.scheme, a.netloc.lower(), a.path.rstrip("/")) == (b.scheme, b.netloc.lower(), b.path.rstrip("/"))
+
+
+def clean_title(value: object) -> str:
+    return re.sub(r"\s+", " ", html.unescape(str(value or ""))).strip()[:300]
+
+
+def login_tab_title(page: str) -> str:
+    """Title of the page as shown in the login window tab (works for JS-rendered sites)."""
+    endpoint = login_endpoint()
+    if not endpoint:
+        return ""
+    try:
+        with NO_PROXY.open(endpoint.replace("ws://", "http://", 1).split("/devtools/")[0] + "/json/list", timeout=1) as response:
+            tabs = json.load(response)
+    except (OSError, ValueError):
+        return ""
+    for tab in tabs:
+        if tab.get("type") == "page" and same_page(str(tab.get("url", "")), page):
+            return clean_title(tab.get("title"))
+    return ""
+
+
+def html_title(ydl: "yt_dlp.YoutubeDL", page: str) -> str:
+    """og:title or <title> of the page, fetched with the same cookies as the video."""
+    try:
+        with ydl.urlopen(page) as response:
+            charset = response.headers.get_content_charset() or "utf-8"
+            text = response.read(2_000_000).decode(charset, "replace")
+    except Exception:
+        return ""
+    for pattern in (r'<meta[^>]+property=["\']og:title["\'][^>]+content=["\']([^"\']+)',
+                    r'<meta[^>]+content=["\']([^"\']+)["\'][^>]+property=["\']og:title',
+                    r"<title[^>]*>([^<]+)</title>"):
+        match = re.search(pattern, text, re.IGNORECASE)
+        if match and clean_title(match.group(1)):
+            return clean_title(match.group(1))
+    return ""
+
+
+def unique_template(ydl: "yt_dlp.YoutubeDL", info: dict, folder: Path) -> None:
+    """Add " (2)", " (3)"… when a finished video with the same name is already there."""
+    stem = Path(ydl.prepare_filename({**info, "ext": "mp4"})).stem
+    taken = lambda name: any((folder / f"{name}.{ext}").exists() for ext in ("mp4", "mkv", "webm", "mov", "m4a"))
+    if not taken(stem):
+        return
+    number = 2
+    while taken(f"{stem} ({number})"):
+        number += 1
+    ydl.params["outtmpl"]["default"] = str(folder / f"{stem} ({number})".replace("%", "%%")) + ".%(ext)s"
+
+
 def prepare_chrome_extension() -> Path:
     global PAIR_KEY, EXTENSION_DIR
-    if sys.platform == "win32":
-        config_dir = Path(os.environ.get("APPDATA", str(Path.home()))) / "Vidloader"
-    elif sys.platform == "darwin":
-        config_dir = Path.home() / "Library" / "Application Support" / "Vidloader"
-    else:
-        config_dir = Path.home() / ".config" / "Vidloader"
-    config_dir.mkdir(parents=True, exist_ok=True)
-    secret_file = config_dir / "chrome-pair-key"
+    config = config_dir()
+    secret_file = config / "chrome-pair-key"
     if secret_file.exists():
         key = secret_file.read_text(encoding="ascii").strip()
         if not re.fullmatch(r"[a-f0-9]{64}", key):
@@ -67,10 +208,10 @@ def prepare_chrome_extension() -> Path:
         with secret_file.open("x", encoding="ascii") as stream:
             stream.write(key + "\n")
         os.chmod(secret_file, 0o600)
-    extension_dir = config_dir / "Chrome extension"
+    extension_dir = config / "extension"
     extension_dir.mkdir(exist_ok=True)
     for name in ("manifest.json", "background.js"):
-        shutil.copy2(APP_DIR / "chrome_extension" / name, extension_dir / name)
+        shutil.copy2(APP_DIR / "extension" / name, extension_dir / name)
     config_file = extension_dir / "config.js"
     config_file.write_text(f'export const PAIR_KEY = "{key}";\n', encoding="ascii")
     os.chmod(config_file, 0o600)
@@ -138,7 +279,7 @@ def download(payload: dict) -> None:
         browser = payload["browser"]
         quality = payload["quality"]
         insecure = payload["insecure"]
-        if browser not in ("none", "chrome", "edge", "firefox", "safari", "brave", "cookies"):
+        if browser not in BROWSERS:
             raise ValueError("Неизвестный браузер")
         if quality not in ("best", "1080", "720", "480", "360"):
             raise ValueError("Неизвестное качество")
@@ -185,7 +326,7 @@ def download(payload: dict) -> None:
                     break
         options = {
             "format": format_selector(quality),
-            "outtmpl": str(folder / "%(title).180B [%(id)s].%(ext)s"),
+            "outtmpl": str(folder / "%(title).180B.%(ext)s"),
             "merge_output_format": "mp4",
             "windowsfilenames": True,
             "noplaylist": True,
@@ -197,8 +338,8 @@ def download(payload: dict) -> None:
             "quiet": True,
             "no_warnings": False,
         }
-        if browser == "cookies":
-            cookie_text = payload["cookie_text"]
+        if browser in ("cookies", "login"):
+            cookie_text = payload["cookie_text"] if browser == "cookies" else login_cookies()
             cookie_dir = Path(tempfile.mkdtemp(prefix="vidloader-cookies-"))
             cookie_file = cookie_dir / "cookies.txt"
             cookie_file.write_bytes(cookie_text.encode("utf-8"))
@@ -211,7 +352,20 @@ def download(payload: dict) -> None:
 
         update(stage="connecting", message="Подключаюсь к сайту…")
         with yt_dlp.YoutubeDL(options) as ydl:
-            result = ydl.extract_info(url, download=True)
+            info = ydl.extract_info(url, download=False, process=False)
+            if CANCEL.is_set():
+                raise DownloadCancelled()
+            # Site extractors already know the real title; the generic one only sees a page or playlist name.
+            if info.get("extractor_key") in GENERIC_EXTRACTORS:
+                title = clean_title(payload.get("title")) or login_tab_title(referer)
+                # Only fetch when the address is an HTML page, not the media file itself.
+                if not title and (referer != url or info["extractor_key"] == "HTML5MediaEmbed"):
+                    title = html_title(ydl, referer)
+                if title:
+                    info["title"] = title
+            if info.get("_type", "video") == "video":
+                unique_template(ydl, info, folder)
+            result = ydl.process_ie_result(info, download=True)
             if CANCEL.is_set():
                 raise DownloadCancelled()
             filename = ""
@@ -292,7 +446,7 @@ class Handler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(body)
         elif self.path == "/api/status" and self.authorized():
-            self.respond(200, snapshot())
+            self.respond(200, {**snapshot(), "login_open": login_endpoint() is not None})
         elif self.path == "/api/extension/setup" and self.authorized():
             self.respond(200, {"folder": str(EXTENSION_DIR)})
         else:
@@ -310,6 +464,22 @@ class Handler(BaseHTTPRequestHandler):
         if self.path == "/api/extension/open-setup":
             self.respond(200, {"ok": True})
             threading.Thread(target=open_chrome_setup, daemon=True).start()
+            return
+        if self.path == "/api/login/open":
+            try:
+                raw = str(self.read_json().get("url", "")).strip()
+                open_login_window(normalize_url(raw)[1] if raw else "about:blank")
+                self.respond(200, {"ok": True})
+            except (ValueError, TypeError, OSError, json.JSONDecodeError) as exc:
+                self.respond(400, {"error": str(exc)})
+            return
+        if self.path == "/api/reveal":
+            state = snapshot()
+            if state["stage"] != "done" or not Path(state["filename"]).is_file():
+                self.respond(404, {"error": "Файл не найден"})
+                return
+            reveal(Path(state["filename"]))
+            self.respond(200, {"ok": True})
             return
         if self.path == "/api/settings":
             try:
@@ -348,11 +518,12 @@ class Handler(BaseHTTPRequestHandler):
                     raise ValueError("Некорректные cookies")
                 with LOCK:
                     settings = dict(SETTINGS)
-                payload = {"url": payload.get("url"), "browser": "cookies" if cookie_text.strip() != "# Netscape HTTP Cookie File" else "none", "cookie_text": cookie_text, **settings}
+                title = payload.get("title")
+                payload = {"url": payload.get("url"), "title": title if isinstance(title, str) else "", "browser": "cookies" if cookie_text.strip() != "# Netscape HTTP Cookie File" else "none", "cookie_text": cookie_text, **settings}
             normalize_url(str(payload.get("url", "")))
             if not isinstance(payload.get("insecure"), bool):
                 raise ValueError("Некорректная настройка сертификата")
-            if payload.get("browser") not in ("none", "chrome", "edge", "firefox", "safari", "brave", "cookies"):
+            if payload.get("browser") not in BROWSERS:
                 raise ValueError("Неизвестный браузер")
             if payload["browser"] == "cookies":
                 cookie_text = payload.get("cookie_text")
@@ -390,6 +561,15 @@ def open_interface(address: str) -> None:
     webbrowser.open(address)
 
 
+def reveal(path: Path) -> None:
+    if sys.platform == "win32":
+        subprocess.Popen(["explorer", f"/select,{path}"])
+    elif sys.platform == "darwin":
+        subprocess.Popen(["open", "-R", str(path)])
+    else:
+        subprocess.Popen(["xdg-open", str(path.parent)])
+
+
 def open_chrome_setup() -> None:
     candidates = [shutil.which("chrome"), shutil.which("google-chrome")]
     if sys.platform == "win32":
@@ -421,7 +601,7 @@ def main() -> None:
     address = f"http://127.0.0.1:{port}/"
     print(f"Откройте приложение: {address}")
     print("Чтобы закрыть приложение, нажмите Ctrl+C в этом окне.")
-    if os.environ.get("SBERVIDEO_NO_BROWSER") != "1":
+    if os.environ.get("VIDLOADER_NO_BROWSER") != "1":
         threading.Timer(0.4, open_interface, args=(address,)).start()
     try:
         server.serve_forever()

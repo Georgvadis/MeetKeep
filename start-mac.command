@@ -16,4 +16,4 @@ fi
 if [[ "$1" == "--prepare-only" ]]; then
   exit 0
 fi
-.venv/bin/python sbervideo_downloader.py
+.venv/bin/python vidloader.py

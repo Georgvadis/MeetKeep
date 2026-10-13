@@ -69,7 +69,7 @@ chrome.action.onClicked.addListener(async tab => {
     const response = await fetch(`${address}/api/extension/start`, {
       method: "POST",
       headers: {"Content-Type": "application/json", "X-Vidloader-Pair-Key": PAIR_KEY},
-      body: JSON.stringify({url: tab.url, cookie_text: cookieText})
+      body: JSON.stringify({url: tab.url, title: tab.title || "", cookie_text: cookieText})
     });
     const result = await response.json();
     if (!response.ok) throw new Error(result.error || "Не удалось начать загрузку");
