@@ -9,8 +9,8 @@ async function proof(nonce) {
   return Array.from(signature, byte => byte.toString(16).padStart(2, "0")).join("");
 }
 
-async function vidloader() {
-  if (!/^[a-f0-9]{64}$/.test(PAIR_KEY)) throw new Error("Установите расширение из папки Vidloader");
+async function findMeetKeep() {
+  if (!/^[a-f0-9]{64}$/.test(PAIR_KEY)) throw new Error("Установите расширение из папки, которую показывает MeetKeep");
   const nonce = Array.from(crypto.getRandomValues(new Uint8Array(16)), byte => byte.toString(16).padStart(2, "0")).join("");
   const expected = await proof(nonce);
   for (const port of ports) {
@@ -20,7 +20,7 @@ async function vidloader() {
       if (response.ok && (await response.json()).proof === expected) return address;
     } catch (_) {}
   }
-  throw new Error("Запустите Vidloader и повторите попытку");
+  throw new Error("Запустите MeetKeep и повторите попытку");
 }
 
 function cookieLine(cookie) {
@@ -64,17 +64,17 @@ chrome.action.onClicked.addListener(async tab => {
     if (!tab.url || !/^https?:\/\//.test(tab.url)) throw new Error("Откройте страницу с видео");
     const origin = `${new URL(tab.url).origin}/*`;
     if (!await chrome.permissions.request({origins: [origin]})) throw new Error("Разрешите доступ к cookies этого сайта");
-    const address = await vidloader();
+    const address = await findMeetKeep();
     const cookieText = await siteCookies(tab);
     const response = await fetch(`${address}/api/extension/start`, {
       method: "POST",
-      headers: {"Content-Type": "application/json", "X-Vidloader-Pair-Key": PAIR_KEY},
+      headers: {"Content-Type": "application/json", "X-MeetKeep-Pair-Key": PAIR_KEY},
       body: JSON.stringify({url: tab.url, title: tab.title || "", cookie_text: cookieText})
     });
     const result = await response.json();
     if (!response.ok) throw new Error(result.error || "Не удалось начать загрузку");
-    await badge(tab.id, "↓", "Vidloader: загрузка началась");
+    await badge(tab.id, "↓", "MeetKeep: загрузка началась");
   } catch (error) {
-    await badge(tab.id, "!", `Vidloader: ${error.message}`);
+    await badge(tab.id, "!", `MeetKeep: ${error.message}`);
   }
 });

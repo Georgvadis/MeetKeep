@@ -1,11 +1,11 @@
 {
   "manifest_version": 3,
-  "name": "Vidloader",
-  "version": "0.3.0",
-  "description": "Скачать видео из текущей вкладки через локальный Vidloader",
+  "name": "MeetKeep",
+  "version": "0.4.0",
+  "description": "Сохранить запись встречи из текущей вкладки в MeetKeep",
   "permissions": ["activeTab", "cookies"],
   "host_permissions": ["http://127.0.0.1/*"],
   "optional_host_permissions": ["http://*/*", "https://*/*"],
   "background": {"service_worker": "background.js", "type": "module"},
-  "action": {"default_title": "Скачать видео в Vidloader"}
+  "action": {"default_title": "Сохранить запись в MeetKeep"}
 }

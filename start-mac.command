@@ -16,4 +16,7 @@ fi
 if [[ "$1" == "--prepare-only" ]]; then
   exit 0
 fi
-.venv/bin/python vidloader.py
+if [[ ! -f frontend/dist/index.html ]]; then
+  (cd frontend && npm ci && npm run build)
+fi
+.venv/bin/python meetkeep.py

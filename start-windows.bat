@@ -14,4 +14,14 @@ if errorlevel 1 (
     pause
     exit /b 1
 )
-".venv\Scripts\python.exe" vidloader.py
+if not exist "frontend\dist\index.html" (
+    pushd frontend
+    call npm ci && call npm run build
+    if errorlevel 1 (
+        echo Для сборки интерфейса установите Node.js с nodejs.org.
+        pause
+        exit /b 1
+    )
+    popd
+)
+".venv\Scripts\python.exe" meetkeep.py
