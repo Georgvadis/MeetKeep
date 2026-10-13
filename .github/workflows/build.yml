@@ -25,8 +25,8 @@ jobs:
   windows:
     runs-on: windows-2022
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: '3.13'
       - name: Build Vidloader.exe
@@ -38,7 +38,7 @@ jobs:
           if (!(Test-Path dist/Vidloader.exe)) { throw 'Vidloader.exe was not created' }
           if (Test-Path dist/Vidloader) { throw 'Unexpected onedir folder next to Vidloader.exe' }
           Write-Host "Size: $((Get-Item dist/Vidloader.exe).Length) bytes"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: Vidloader-Windows-x64
           path: dist/Vidloader.exe
@@ -47,8 +47,8 @@ jobs:
   macos:
     runs-on: macos-14
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: '3.13'
       - name: Build Vidloader.app
@@ -59,7 +59,7 @@ jobs:
           test ! -e dist/Vidloader
           # ditto keeps the bundle's symlinks and metadata intact inside the zip.
           ditto -c -k --keepParent dist/Vidloader.app dist/Vidloader-macOS.zip
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: Vidloader-macOS-arm64
           path: dist/Vidloader-macOS.zip
@@ -68,11 +68,11 @@ jobs:
   release:
     needs: [windows, macos]
     if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.version != '')
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v7
         with:
           path: assets
       - name: Publish release
