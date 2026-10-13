@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import faulthandler
 import hashlib
 import hmac
 import html
@@ -50,6 +51,8 @@ LOCK = threading.Lock()
 CANCEL = threading.Event()
 STOP = threading.Event()
 WINDOW = None
+SMOKE = "--smoke-test" in sys.argv
+SMOKE_OK = False
 PAIR_KEY = ""
 EXTENSION_DIR = Path()
 COOKIE_TEXT = ""
@@ -644,6 +647,39 @@ RU_MENU = {
 }
 
 
+def setup_log() -> None:
+    """Frozen windowed apps have no console: keep output and crashes in the data folder."""
+    if not getattr(sys, "frozen", False):
+        return
+    log = CONFIG_DIR / "meetkeep.log"
+    try:
+        if log.exists() and log.stat().st_size > 1_000_000:
+            log.unlink()
+        stream = open(log, "a", encoding="utf-8", buffering=1)
+    except OSError:
+        return
+    sys.stdout = sys.stderr = stream
+    faulthandler.enable(stream)
+    print(f"--- {time.strftime('%Y-%m-%d %H:%M:%S')} {APP_NAME} on {PLATFORM}, args {sys.argv[1:]}")
+
+
+def smoke_check() -> None:
+    """--smoke-test: wait until the React UI is on screen in the real window, then close it."""
+    global SMOKE_OK
+    try:
+        if WINDOW.events.loaded.wait(60):
+            for _ in range(40):
+                if WINDOW.evaluate_js("document.querySelector('.app') ? 'ok' : ''") == "ok":
+                    SMOKE_OK = True
+                    break
+                time.sleep(0.5)
+        print(f"smoke test: {'UI loaded' if SMOKE_OK else 'UI did not load'}")
+    except Exception:
+        traceback.print_exc()
+    finally:
+        WINDOW.destroy()
+
+
 def run_window(address: str) -> bool:
     """Show the UI in a native window. Returns False when no suitable web view is available."""
     global WINDOW
@@ -659,7 +695,11 @@ def run_window(address: str) -> bool:
         dark = system_dark()
         background = {"windows": "#202020" if dark else "#fafafa", "macos": "#1e1e20" if dark else "#ffffff"}.get(PLATFORM, "#ffffff")
         WINDOW = webview.create_window(APP_NAME, address, width=1000, height=660, min_size=(760, 520), background_color=background)
+        if SMOKE:
+            threading.Thread(target=smoke_check, daemon=True).start()
+        print("window: starting")
         webview.start(localization=RU_MENU)
+        print("window: closed")
         return True
     except Exception:
         traceback.print_exc()
@@ -700,8 +740,12 @@ def self_test() -> int:
 
 
 def main() -> None:
+    setup_log()
     if "--self-test" in sys.argv:
         raise SystemExit(self_test())
+    if SMOKE:
+        # A window that never shows up must fail CI instead of hanging it.
+        threading.Timer(90, lambda: os._exit(3)).start()
     load_data()
     if PLATFORM == "windows":
         prepare_chrome_extension()
@@ -719,11 +763,12 @@ def main() -> None:
         server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
     address = f"http://127.0.0.1:{server.server_address[1]}/"
     threading.Thread(target=server.serve_forever, daemon=True).start()
+    print(f"server: {address}", flush=True)
     try:
         if os.environ.get("MEETKEEP_NO_WINDOW") == "1":
-            print(f"{APP_NAME}: {address}", flush=True)
             STOP.wait()
-        elif not run_window(address):
+        elif not run_window(address) and not SMOKE:
+            print("window: unavailable, opening the browser")
             open_in_browser(address)
             STOP.wait()
     except KeyboardInterrupt:
@@ -732,6 +777,8 @@ def main() -> None:
         CANCEL.set()
         server.shutdown()
         server.server_close()
+    if SMOKE:
+        os._exit(0 if SMOKE_OK else 1)
 
 
 if __name__ == "__main__":

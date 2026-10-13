@@ -49,6 +49,14 @@ jobs:
             Get-Content (Join-Path $env:TEMP 'meetkeep-self-test.txt') -ErrorAction SilentlyContinue
             throw "Self-test failed with exit code $($test.ExitCode)"
           }
+      - name: Open the real window
+        shell: pwsh
+        timeout-minutes: 5
+        run: |
+          # Starts MeetKeep.exe, waits for the React UI inside the WebView2 window, then closes it.
+          $run = Start-Process dist/MeetKeep.exe -ArgumentList '--smoke-test' -Wait -PassThru
+          Get-Content (Join-Path $env:APPDATA 'MeetKeep/meetkeep.log') -ErrorAction SilentlyContinue
+          if ($run.ExitCode -ne 0) { throw "Window smoke test failed with exit code $($run.ExitCode)" }
       - uses: actions/upload-artifact@v6
         with:
           name: MeetKeep-Windows-x64
@@ -70,6 +78,7 @@ jobs:
       - name: Build MeetKeep.app
         run: zsh build-mac.command
       - name: Check app bundle
+        timeout-minutes: 5
         run: |
           test -x dist/MeetKeep.app/Contents/MacOS/MeetKeep
           test ! -e dist/MeetKeep
@@ -78,6 +87,11 @@ jobs:
             cat "${TMPDIR:-/tmp}/meetkeep-self-test.txt" || true
             exit 1
           fi
+          # Starts the app, waits for the React UI inside the WebKit window, then closes it.
+          status=0
+          dist/MeetKeep.app/Contents/MacOS/MeetKeep --smoke-test || status=$?
+          cat "$HOME/Library/Application Support/MeetKeep/meetkeep.log" || true
+          if [ "$status" -ne 0 ]; then echo "::error::Window smoke test failed with exit code $status"; exit 1; fi
           # ditto keeps the bundle's symlinks and metadata intact inside the zip.
           ditto -c -k --keepParent dist/MeetKeep.app dist/MeetKeep-macOS.zip
       - uses: actions/upload-artifact@v6
