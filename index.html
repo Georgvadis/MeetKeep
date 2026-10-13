@@ -5,117 +5,174 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Vidloader</title>
   <style>
-    :root { color-scheme: dark; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: #edf5f1; background: #0c1214; }
+    :root {
+      color-scheme: light dark;
+      --bg: #f3f5f4; --card: #ffffff; --field: #f7f9f8; --line: #dde4e1; --text: #15201c; --muted: #5f6f69;
+      --accent: #17a866; --accent-hover: #12935a; --on-accent: #ffffff; --soft: #e7f6ee; --danger: #c54747; --danger-soft: #fbeaea;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: var(--text); background: var(--bg);
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #0c1214; --card: #161f21; --field: #1e2a2c; --line: #2c3b3d; --text: #edf5f1; --muted: #9fb1aa;
+        --accent: #2ebf79; --accent-hover: #42d38c; --on-accent: #082115; --soft: #18322a; --danger: #ef7676; --danger-soft: #3a1f21;
+      }
+    }
     * { box-sizing: border-box; }
-    body { margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 28px 16px; }
-    main { width: min(660px, 100%); background: #172023; border: 1px solid #2a393b; border-radius: 20px; box-shadow: 0 16px 50px #0005; padding: 32px; }
-    h1 { margin: 0 0 7px; font-size: 28px; letter-spacing: -.04em; }
-    p { margin: 0; color: #a9bab3; line-height: 1.5; }
-    label { display: block; font-size: 14px; font-weight: 650; margin: 18px 0 7px; }
-    input, select { width: 100%; padding: 12px 13px; border: 1px solid #3a4a4b; border-radius: 10px; background: #202b2d; color: #edf5f1; font: inherit; outline: none; }
-    input:focus, select:focus { border-color: #38c784; box-shadow: 0 0 0 3px #38c78433; }
-    .row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
-    .check { display: flex; gap: 10px; align-items: flex-start; margin-top: 22px; font-weight: 500; line-height: 1.4; }
-    .check input { width: 18px; height: 18px; margin: 1px 0 0; accent-color: #38c784; flex: none; }
-    .actions { display: flex; gap: 10px; margin-top: 25px; }
-    button { border: 0; border-radius: 10px; padding: 12px 18px; font: inherit; font-weight: 650; cursor: pointer; }
-    #start { background: #2ebf79; color: #082115; flex: 1; }
-    #start:hover { background: #42d38c; }
-    #stop { background: #2a383a; color: #e0ebe5; }
+    body { margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 24px 16px; background: var(--bg); }
+    main { width: min(640px, 100%); background: var(--card); border: 1px solid var(--line); border-radius: 20px; box-shadow: 0 18px 50px #0002; padding: 28px; }
+    header { display: flex; align-items: center; gap: 12px; margin-bottom: 22px; }
+    header svg { width: 40px; height: 40px; flex: none; }
+    h1 { margin: 0; font-size: 22px; letter-spacing: -.03em; }
+    header p { margin: 2px 0 0; font-size: 13px; }
+    header .ghost { margin-left: auto; }
+    p { margin: 0; color: var(--muted); line-height: 1.5; }
+    label, summary { display: block; font-size: 13px; font-weight: 650; margin: 16px 0 7px; }
+    input, select { width: 100%; padding: 11px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--field); color: var(--text); font: inherit; outline: none; }
+    input:focus, select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 25%, transparent); }
+    button { border: 0; border-radius: 10px; padding: 11px 16px; font: inherit; font-weight: 650; cursor: pointer; background: var(--field); color: var(--text); }
+    button:hover { filter: brightness(.97); }
     button:disabled { cursor: not-allowed; opacity: .5; }
-    .status { margin-top: 25px; padding: 17px; background: #1d292a; border: 1px solid #304143; border-radius: 12px; }
-    .status strong { display: block; font-size: 15px; margin-bottom: 5px; }
-    .bar { height: 8px; background: #354744; border-radius: 10px; overflow: hidden; margin-top: 14px; }
-    .bar > div { height: 100%; width: 0; background: #38c784; transition: width .2s; }
+    .ghost { background: transparent; color: var(--muted); font-size: 13px; font-weight: 500; padding: 6px 8px; }
+    .link { background: transparent; color: var(--accent); padding: 4px 0; font-size: 13px; }
+    .url { display: flex; gap: 8px; }
+    .url input { font-size: 16px; padding: 13px 14px; }
+    .row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+    .panel { margin-top: 12px; padding: 14px 16px; border-radius: 12px; background: var(--soft); }
+    .panel ol { margin: 0 0 12px; padding-left: 20px; color: var(--muted); font-size: 14px; line-height: 1.6; }
+    .panel .line { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+    .dot { display: inline-flex; align-items: center; gap: 7px; font-size: 13px; color: var(--muted); }
+    .dot::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--line); }
+    .dot.on::before { background: var(--accent); }
+    details { margin-top: 16px; border-top: 1px solid var(--line); }
+    summary { cursor: pointer; color: var(--muted); font-weight: 600; margin-bottom: 0; }
+    summary span { font-weight: 400; }
+    .check { display: flex; gap: 10px; align-items: center; margin-top: 16px; font-weight: 500; }
+    .check input { width: 18px; height: 18px; margin: 0; accent-color: var(--accent); }
+    .actions { display: flex; gap: 10px; margin-top: 22px; }
+    #start { flex: 1; background: var(--accent); color: var(--on-accent); font-size: 16px; padding: 13px 18px; }
+    #start:hover { background: var(--accent-hover); filter: none; }
+    .status { margin-top: 20px; padding: 16px; background: var(--field); border: 1px solid var(--line); border-radius: 12px; }
+    .status[data-stage="error"] { background: var(--danger-soft); border-color: transparent; }
+    .chip { display: inline-block; font-size: 12px; font-weight: 700; padding: 3px 9px; border-radius: 99px; background: var(--line); margin-bottom: 8px; }
+    [data-stage="done"] .chip, [data-stage="downloading"] .chip, [data-stage="processing"] .chip { background: var(--accent); color: var(--on-accent); }
+    [data-stage="error"] .chip { background: var(--danger); color: #fff; }
+    .bar { height: 6px; background: var(--line); border-radius: 10px; overflow: hidden; margin-top: 12px; }
+    .bar > div { height: 100%; width: 0; background: var(--accent); transition: width .2s; }
+    #message { color: var(--text); overflow-wrap: anywhere; }
     #meta, #filename { font-size: 12px; margin-top: 8px; overflow-wrap: anywhere; }
-    .chrome { padding: 14px 16px; border: 1px solid #304143; border-radius: 12px; background: #1d292a; margin: 18px 0 4px; }
-    .chrome p { font-size: 14px; }
-    .chrome button { background: transparent; color: #62daa0; padding: 5px 0 0; font-size: 13px; }
-    #extension-help { margin-top: 10px; }
-    #extension-folder { color: #edf5f1; overflow-wrap: anywhere; user-select: all; }
-    .foot { display: flex; justify-content: flex-end; margin-top: 18px; }
-    .foot button { background: transparent; color: #a9bab3; font-size: 12px; padding: 3px; font-weight: 500; }
-    @media (max-width: 520px) { main { padding: 23px; } .row { grid-template-columns: 1fr; gap: 0; } .actions { flex-direction: column; } }
+    #extension-folder { color: var(--text); overflow-wrap: anywhere; user-select: all; font-size: 13px; }
+    #extension-box p { font-size: 13px; margin-top: 8px; }
+    @media (max-width: 520px) { main { padding: 20px; } .row { grid-template-columns: 1fr; gap: 0; } .actions { flex-direction: column; } }
   </style>
 </head>
 <body>
   <main>
-    <h1>Vidloader</h1>
-    <div class="chrome" id="chrome-box" hidden>
-      <p><strong>Chrome:</strong> откройте видео и нажмите значок Vidloader в браузере.</p>
-      <button id="extension-setup" type="button">Настроить расширение</button>
-      <div id="extension-help" hidden>
-        <p>В Chrome включите «Режим разработчика», нажмите «Загрузить распакованное расширение» и выберите эту папку:</p>
-        <p id="extension-folder"></p>
-        <button id="copy-extension-folder" type="button">Скопировать путь</button>
-      </div>
-    </div>
+    <header>
+      <svg viewBox="0 0 40 40" aria-hidden="true"><rect width="40" height="40" rx="11" fill="var(--accent)"/><path d="M20 10v15m-6-6 6 6 6-6M12 30h16" stroke="var(--on-accent)" stroke-width="3" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <div><h1>Vidloader</h1><p>Скачивание видео по ссылке</p></div>
+      <button class="ghost" id="close" type="button">Закрыть</button>
+    </header>
     <form id="form">
       <label for="url">Ссылка на видео</label>
-      <input id="url" type="url" placeholder="https://…" autocomplete="off" required autofocus>
-      <div class="row">
-        <div>
-          <label for="browser">Вход через браузер</label>
-          <select id="browser">
-            <option value="chrome">Chrome</option>
-            <option value="edge">Edge</option>
-            <option value="firefox">Firefox</option>
-            <option value="safari">Safari (macOS)</option>
-            <option value="brave">Brave</option>
-            <option value="cookies">Файл cookies.txt (Chrome/Яндекс)</option>
-            <option value="none">Не требуется</option>
-          </select>
-        </div>
-        <div>
-          <label for="quality">Качество</label>
-          <select id="quality">
-            <option value="best">Лучшее доступное</option>
-            <option value="1080">До 1080p</option>
-            <option value="720">До 720p</option>
-            <option value="480">До 480p</option>
-            <option value="360">До 360p</option>
-          </select>
+      <div class="url">
+        <input id="url" type="url" placeholder="https://…" autocomplete="off" required autofocus>
+        <button id="paste" type="button">Вставить</button>
+      </div>
+      <label for="browser">Вход на сайт</label>
+      <select id="browser">
+        <option value="none">Не требуется</option>
+        <option value="login">Окно входа Vidloader</option>
+        <option value="chrome">Chrome</option>
+        <option value="edge">Edge</option>
+        <option value="firefox">Firefox</option>
+        <option value="safari">Safari</option>
+        <option value="brave">Brave</option>
+        <option value="cookies">Файл cookies.txt</option>
+      </select>
+      <div class="panel" id="login-box" hidden>
+        <ol>
+          <li>Нажмите «Открыть окно входа» — откроется отдельное окно Chrome или Edge.</li>
+          <li>Войдите на сайт в этом окне. Вход сохранится для следующих загрузок.</li>
+          <li>Не закрывая окно, нажмите «Скачать видео».</li>
+        </ol>
+        <div class="line">
+          <button id="login-open" type="button">Открыть окно входа</button>
+          <span class="dot" id="login-state">Окно закрыто</span>
         </div>
       </div>
       <div id="cookie-row" hidden>
-        <label for="cookie-file">Файл cookies.txt</label>
+        <label for="cookie-file">Файл cookies.txt (формат Netscape)</label>
         <input id="cookie-file" type="file" accept=".txt,text/plain">
       </div>
-      <label for="folder">Папка сохранения</label>
-      <input id="folder" type="text" value="~/Downloads" required>
-      <label class="check"><input id="insecure" type="checkbox"><span>Пропустить проверку сертификата</span></label>
+      <details id="settings">
+        <summary>Настройки <span id="settings-summary"></span></summary>
+        <div class="row">
+          <div>
+            <label for="quality">Качество</label>
+            <select id="quality">
+              <option value="best">Лучшее доступное</option>
+              <option value="1080">До 1080p</option>
+              <option value="720">До 720p</option>
+              <option value="480">До 480p</option>
+              <option value="360">До 360p</option>
+            </select>
+          </div>
+          <div>
+            <label for="folder">Папка сохранения</label>
+            <input id="folder" type="text" value="~/Downloads" required>
+          </div>
+        </div>
+        <label class="check"><input id="insecure" type="checkbox"><span>Пропустить проверку сертификата</span></label>
+      </details>
       <div class="actions">
         <button id="start" type="submit">Скачать видео</button>
         <button id="stop" type="button" disabled>Остановить</button>
       </div>
     </form>
-    <div class="status" aria-live="polite">
-      <strong id="stage">Готово к загрузке</strong>
-      <p id="message"></p>
+    <section class="status" id="status" data-stage="idle" aria-live="polite">
+      <span class="chip" id="stage">Готово к загрузке</span>
+      <p id="message">Вставьте ссылку и нажмите «Скачать видео».</p>
       <div class="bar"><div id="bar"></div></div>
       <p id="meta"></p>
       <p id="filename"></p>
-    </div>
-    <div class="foot"><button id="close" type="button">Закрыть приложение</button></div>
+      <button class="link" id="reveal" type="button" hidden>Показать в папке</button>
+    </section>
+    <details id="extension-box" hidden>
+      <summary>Запасной вариант: расширение Chrome</summary>
+      <p>Нужно, только если окно входа не работает (например, его запрещает политика компании). Откройте видео в своём Chrome и нажмите значок Vidloader.</p>
+      <button class="link" id="extension-setup" type="button">Настроить расширение</button>
+      <div id="extension-help" hidden>
+        <p>В Chrome включите «Режим разработчика», нажмите «Загрузить распакованное расширение» и выберите папку:</p>
+        <p id="extension-folder"></p>
+        <button class="link" id="copy-extension-folder" type="button">Скопировать путь</button>
+      </div>
+    </details>
   </main>
   <script>
     const token = "__APP_TOKEN__";
     const $ = id => document.getElementById(id);
     const active = new Set(["connecting", "downloading", "processing"]);
     const windows = navigator.userAgent.includes("Windows");
+    const mac = navigator.userAgent.includes("Macintosh");
+    const stages = {idle: "Готово к загрузке", connecting: "Подключение", downloading: "Скачивание", processing: "Обработка", done: "Готово", cancelled: "Остановлено", error: "Ошибка"};
     let closed = false;
-    const saved = JSON.parse(localStorage.getItem("video-downloader-settings") || "{}");
-    for (const key of ["browser", "quality", "folder"]) if (saved[key]) $(key).value = saved[key];
-    $("chrome-box").hidden = !windows;
+    let saved = {};
+    try { saved = JSON.parse(localStorage.getItem("video-downloader-settings") || "{}"); } catch (_) {}
+    // Chrome on Windows encrypts cookies for itself, so the login window replaces direct access there.
     $("browser").querySelector('[value="chrome"]').hidden = windows;
-    if (windows && (!saved.browser || saved.browser === "chrome")) $("browser").value = "none";
-    function updateCookieField() {
-      const enabled = $("browser").value === "cookies";
-      $("cookie-row").hidden = !enabled;
-      $("cookie-file").required = enabled;
+    $("browser").querySelector('[value="safari"]').hidden = !mac;
+    $("extension-box").hidden = !windows;
+    for (const key of ["browser", "quality", "folder"]) if (saved[key]) $(key).value = saved[key];
+    if ($("browser").selectedOptions[0]?.hidden || !saved.browser) $("browser").value = windows ? "login" : mac ? "chrome" : "none";
+    function updateForm() {
+      const mode = $("browser").value;
+      $("login-box").hidden = mode !== "login";
+      $("cookie-row").hidden = mode !== "cookies";
+      $("cookie-file").required = mode === "cookies";
+      $("settings-summary").textContent = `· ${$("quality").selectedOptions[0].text} · ${$("folder").value}`;
     }
-    $("browser").addEventListener("change", updateCookieField);
-    updateCookieField();
+    for (const key of ["browser", "quality", "folder"]) $(key).addEventListener("input", updateForm);
+    updateForm();
     async function api(path, data) {
       const response = await fetch(path, {
         method: data === undefined ? "GET" : "POST",
@@ -126,19 +183,34 @@
       if (!response.ok) throw new Error(result.error || "Ошибка приложения");
       return result;
     }
+    function showError(message) {
+      $("status").dataset.stage = "error";
+      $("stage").textContent = "Ошибка";
+      $("message").textContent = message;
+    }
     async function syncSettings() {
       try {
         await api("/api/settings", {quality: $("quality").value, folder: $("folder").value.trim(), insecure: $("insecure").checked});
       } catch (_) {}
     }
     for (const key of ["quality", "folder", "insecure"]) $(key).addEventListener("change", syncSettings);
+    $("paste").addEventListener("click", async () => {
+      try { $("url").value = (await navigator.clipboard.readText()).trim(); $("url").focus(); }
+      catch (_) { $("url").focus(); }
+    });
+    $("login-open").addEventListener("click", async () => {
+      const url = $("url").value.trim();
+      try { await api("/api/login/open", {url: /^https?:\/\//.test(url) ? url : ""}); }
+      catch (error) { showError(error.message); }
+    });
+    $("reveal").addEventListener("click", async () => { try { await api("/api/reveal", {}); } catch (error) { showError(error.message); } });
     $("extension-setup").addEventListener("click", async () => {
       try {
         const {folder} = await api("/api/extension/setup");
         $("extension-folder").textContent = folder;
         $("extension-help").hidden = false;
         await api("/api/extension/open-setup", {});
-      } catch (error) { $("message").textContent = error.message; }
+      } catch (error) { showError(error.message); }
     });
     $("copy-extension-folder").addEventListener("click", async () => {
       await navigator.clipboard.writeText($("extension-folder").textContent);
@@ -151,11 +223,15 @@
         const busy = active.has(state.stage);
         $("start").disabled = busy;
         $("stop").disabled = !busy;
-        $("stage").textContent = ({idle: "Готово к загрузке", connecting: "Подключение", downloading: "Скачивание", processing: "Обработка", done: "Готово", cancelled: "Остановлено", error: "Ошибка"})[state.stage] || state.stage;
-        $("message").textContent = state.message || "";
+        $("status").dataset.stage = state.stage;
+        $("stage").textContent = stages[state.stage] || state.stage;
+        if (state.stage !== "idle") $("message").textContent = state.message || "";
         $("bar").style.width = `${Math.max(0, Math.min(100, state.percent || 0))}%`;
         $("meta").textContent = [state.bytes_text, state.speed].filter(Boolean).join(" · ");
         $("filename").textContent = state.stage === "done" ? state.filename || "" : "";
+        $("reveal").hidden = !(state.stage === "done" && state.filename);
+        $("login-state").textContent = state.login_open ? "Окно входа открыто" : "Окно закрыто";
+        $("login-state").classList.toggle("on", state.login_open);
       } catch (error) {
         if (!closed) $("message").textContent = error.message;
       }
@@ -169,22 +245,23 @@
       };
       if (data.browser === "cookies") {
         const file = $("cookie-file").files[0];
-        if (!file || file.size > 4_000_000) {
-          $("stage").textContent = "Ошибка";
-          $("message").textContent = "Выберите файл cookies.txt размером до 4 МБ";
-          return;
-        }
+        if (!file || file.size > 4_000_000) return showError("Выберите файл cookies.txt размером до 4 МБ");
         data.cookie_text = await file.text();
       }
-      localStorage.setItem("video-downloader-settings", JSON.stringify({browser: data.browser, quality: data.quality, folder: data.folder}));
+      try { localStorage.setItem("video-downloader-settings", JSON.stringify({browser: data.browser, quality: data.quality, folder: data.folder})); } catch (_) {}
       await syncSettings();
       try { await api("/api/start", data); await refresh(); }
-      catch (error) { $("stage").textContent = "Ошибка"; $("message").textContent = error.message; }
+      catch (error) { showError(error.message); }
     });
-    $("stop").addEventListener("click", async () => { try { await api("/api/cancel", {}); } catch (error) { $("message").textContent = error.message; } });
+    $("stop").addEventListener("click", async () => { try { await api("/api/cancel", {}); } catch (error) { showError(error.message); } });
     $("close").addEventListener("click", async () => {
-      try { await api("/api/shutdown", {}); closed = true; $("stage").textContent = "Приложение закрыто"; $("message").textContent = "Эту вкладку можно закрыть."; }
-      catch (error) { $("message").textContent = error.message; }
+      try {
+        await api("/api/shutdown", {});
+        closed = true;
+        $("status").dataset.stage = "idle";
+        $("stage").textContent = "Приложение закрыто";
+        $("message").textContent = "Это окно можно закрыть.";
+      } catch (error) { showError(error.message); }
     });
     syncSettings(); refresh(); setInterval(refresh, 900);
   </script>

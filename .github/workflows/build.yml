@@ -1,0 +1,59 @@
+name: Build apps
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/build.yml
+      - build-windows.bat
+      - build-mac.command
+      - start-mac.command
+      - index.html
+      - requirements.txt
+      - vidloader.py
+      - extension/**
+
+jobs:
+  windows:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Build Vidloader.exe
+        shell: cmd
+        run: build-windows.bat
+      - name: Check single executable
+        shell: pwsh
+        run: |
+          if (!(Test-Path dist/Vidloader.exe)) { throw 'Vidloader.exe was not created' }
+          if (Test-Path dist/Vidloader) { throw 'Unexpected onedir folder next to Vidloader.exe' }
+          Write-Host "Size: $((Get-Item dist/Vidloader.exe).Length) bytes"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Vidloader-Windows-x64
+          path: dist/Vidloader.exe
+          if-no-files-found: error
+
+  macos:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Build Vidloader.app
+        run: zsh build-mac.command
+      - name: Check app bundle
+        run: |
+          test -x dist/Vidloader.app/Contents/MacOS/Vidloader
+          test ! -e dist/Vidloader
+          # ditto keeps the bundle's symlinks and metadata intact inside the zip.
+          ditto -c -k --keepParent dist/Vidloader.app dist/Vidloader-macOS.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Vidloader-macOS-arm64
+          path: dist/Vidloader-macOS.zip
+          if-no-files-found: error

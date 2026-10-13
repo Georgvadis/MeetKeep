@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Vidloader",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Скачать видео из текущей вкладки через локальный Vidloader",
   "permissions": ["activeTab", "cookies"],
   "host_permissions": ["http://127.0.0.1/*"],
