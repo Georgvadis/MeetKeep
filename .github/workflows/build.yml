@@ -19,6 +19,7 @@ on:
       - requirements.txt
       - meetkeep.py
       - frontend/**
+      - assets/**
       - extension/**
 
 jobs:

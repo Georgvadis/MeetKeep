@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { api, platform, shell } from "./api.js";
 import { bytes, folderName, when } from "./format.js";
 import {
-  AlertIcon, CheckIcon, CloseIcon, DownloadIcon, GearIcon, KeyIcon, LinkIcon, PlayIcon, PuzzleIcon, StopIcon,
+  AlertIcon, CheckIcon, CloseIcon, DownloadIcon, GearIcon, KeyIcon, LinkIcon, Logo, PlayIcon, PuzzleIcon, StopIcon,
 } from "./icons.jsx";
 
 const ACTIVE = ["connecting", "downloading", "processing"];
@@ -141,7 +141,7 @@ function Sidebar({ view, setView, busy, doneCount, failedCount, settings }) {
   const browser = settings ? (BROWSER_OPTIONS.find(([value]) => value === settings.browser)?.[1] ?? "") : "";
   return (
     <nav className="sidebar" aria-label="Разделы">
-      <div className="nav-label">MeetKeep</div>
+      <div className="brand"><Logo /><span>MeetKeep</span></div>
       {item("downloads", "Загрузки", <DownloadIcon />, busy ? 1 : 0)}
       {item("done", "Готово", <CheckIcon />, doneCount)}
       {item("errors", "Ошибки", <AlertIcon />, failedCount)}

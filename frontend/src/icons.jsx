@@ -31,3 +31,19 @@ export const PuzzleIcon = (props) => (
   </Icon>
 );
 export const KeyIcon = (props) => <Icon {...props}><circle cx="8" cy="15" r="4" /><path d="M11 12l9-9M16 7l3 3" /></Icon>;
+
+// The app icon (assets/icon.svg) drawn inline for the sidebar header.
+export function Logo({ size = 30 }) {
+  return (
+    <svg width={size} height={size} viewBox="96 96 832 832" aria-hidden="true">
+      <rect x="100" y="100" width="824" height="824" rx="185" fill="#2b2d42" stroke="#4a4d6a" strokeWidth="8" />
+      <rect x="232" y="312" width="560" height="400" rx="52" fill="#ff9f0a" />
+      <rect x="300" y="372" width="424" height="160" rx="30" fill="#2b2d42" />
+      <circle cx="420" cy="452" r="50" fill="#ff9f0a" />
+      <circle cx="604" cy="452" r="50" fill="#ff9f0a" />
+      <circle cx="420" cy="452" r="18" fill="#2b2d42" />
+      <circle cx="604" cy="452" r="18" fill="#2b2d42" />
+      <path d="M346 712L388 624H636L678 712Z" fill="#d97f00" />
+    </svg>
+  );
+}
