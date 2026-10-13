@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Версия релиза, например v0.3.0 (пусто — только сборка)'
+        description: 'Версия релиза, например v0.4.0 (пусто — только сборка)'
         required: false
         default: ''
   push:
@@ -16,63 +16,84 @@ on:
       - build-windows.bat
       - build-mac.command
       - start-mac.command
-      - index.html
       - requirements.txt
-      - vidloader.py
+      - meetkeep.py
+      - frontend/**
       - extension/**
 
 jobs:
   windows:
     runs-on: windows-2022
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: '3.13'
-      - name: Build Vidloader.exe
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Build MeetKeep.exe
         shell: cmd
         run: build-windows.bat
       - name: Check single executable
         shell: pwsh
         run: |
-          if (!(Test-Path dist/Vidloader.exe)) { throw 'Vidloader.exe was not created' }
-          if (Test-Path dist/Vidloader) { throw 'Unexpected onedir folder next to Vidloader.exe' }
-          Write-Host "Size: $((Get-Item dist/Vidloader.exe).Length) bytes"
-      - uses: actions/upload-artifact@v4
+          if (!(Test-Path dist/MeetKeep.exe)) { throw 'MeetKeep.exe was not created' }
+          if (Test-Path dist/MeetKeep) { throw 'Unexpected onedir folder next to MeetKeep.exe' }
+          Write-Host "Size: $((Get-Item dist/MeetKeep.exe).Length) bytes"
+          # Loads pywebview's WinForms/WebView2 layer, the UI and FFmpeg from inside the built exe.
+          $test = Start-Process dist/MeetKeep.exe -ArgumentList '--self-test' -Wait -PassThru
+          if ($test.ExitCode -ne 0) {
+            Get-Content (Join-Path $env:TEMP 'meetkeep-self-test.txt') -ErrorAction SilentlyContinue
+            throw "Self-test failed with exit code $($test.ExitCode)"
+          }
+      - uses: actions/upload-artifact@v6
         with:
-          name: Vidloader-Windows-x64
-          path: dist/Vidloader.exe
+          name: MeetKeep-Windows-x64
+          path: dist/MeetKeep.exe
           if-no-files-found: error
 
   macos:
     runs-on: macos-14
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: '3.13'
-      - name: Build Vidloader.app
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Build MeetKeep.app
         run: zsh build-mac.command
       - name: Check app bundle
         run: |
-          test -x dist/Vidloader.app/Contents/MacOS/Vidloader
-          test ! -e dist/Vidloader
+          test -x dist/MeetKeep.app/Contents/MacOS/MeetKeep
+          test ! -e dist/MeetKeep
+          # Loads pywebview's Cocoa/WebKit layer, the UI and FFmpeg from inside the built app.
+          if ! dist/MeetKeep.app/Contents/MacOS/MeetKeep --self-test; then
+            cat "${TMPDIR:-/tmp}/meetkeep-self-test.txt" || true
+            exit 1
+          fi
           # ditto keeps the bundle's symlinks and metadata intact inside the zip.
-          ditto -c -k --keepParent dist/Vidloader.app dist/Vidloader-macOS.zip
-      - uses: actions/upload-artifact@v4
+          ditto -c -k --keepParent dist/MeetKeep.app dist/MeetKeep-macOS.zip
+      - uses: actions/upload-artifact@v6
         with:
-          name: Vidloader-macOS-arm64
-          path: dist/Vidloader-macOS.zip
+          name: MeetKeep-macOS-arm64
+          path: dist/MeetKeep-macOS.zip
           if-no-files-found: error
 
   release:
     needs: [windows, macos]
     if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.version != '')
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v7
         with:
           path: assets
       - name: Publish release
@@ -81,17 +102,17 @@ jobs:
           TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.version || github.ref_name }}
         run: |
           if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "::error::Версия должна быть вида v0.3.0, получено: $TAG"
+            echo "::error::Версия должна быть вида v0.4.0, получено: $TAG"
             exit 1
           fi
           if [[ "$GITHUB_EVENT_NAME" == workflow_dispatch ]] && gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG" >/dev/null 2>&1; then
             echo "::error::Тег $TAG уже существует, укажите новую версию"
             exit 1
           fi
-          files=(assets/Vidloader-Windows-x64/Vidloader.exe assets/Vidloader-macOS-arm64/Vidloader-macOS.zip)
+          files=(assets/MeetKeep-Windows-x64/MeetKeep.exe assets/MeetKeep-macOS-arm64/MeetKeep-macOS.zip)
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             gh release upload "$TAG" "${files[@]}" --clobber --repo "$GITHUB_REPOSITORY"
           else
             gh release create "$TAG" "${files[@]}" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
-              --title "Vidloader ${TAG#v}" --generate-notes
+              --title "MeetKeep ${TAG#v}" --generate-notes
           fi

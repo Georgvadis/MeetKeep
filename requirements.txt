@@ -1,2 +1,2 @@
 yt-dlp>=2026.8.19
-websockets>=14
+pywebview>=6.2

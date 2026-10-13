@@ -7,3 +7,5 @@ dist/
 .DS_Store
 .ffmpeg-bundle/
 release/
+frontend/node_modules/
+frontend/dist/
