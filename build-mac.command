@@ -13,7 +13,7 @@ FFMPEG_PATH="$(.venv/bin/python -c 'import imageio_ffmpeg; print(imageio_ffmpeg.
 mkdir -p .ffmpeg-bundle
 cp "$FFMPEG_PATH" .ffmpeg-bundle/ffmpeg
 .venv/bin/python -m PyInstaller --noconfirm --clean --onedir --windowed \
-  --name "MeetKeep" --add-data "frontend/dist:ui" --add-binary ".ffmpeg-bundle/ffmpeg:." meetkeep.py
+  --name "MeetKeep" --icon "assets/icon.icns" --add-data "frontend/dist:ui" --add-binary ".ffmpeg-bundle/ffmpeg:." meetkeep.py
 # PyInstaller also leaves the bare onedir folder next to the bundle; ship only the .app.
 rm -rf dist/MeetKeep
 echo "Приложение: dist/MeetKeep.app"

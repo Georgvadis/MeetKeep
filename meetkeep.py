@@ -408,6 +408,7 @@ def prepare_chrome_extension() -> None:
     extension_dir.mkdir(exist_ok=True)
     for name in ("manifest.json", "background.js"):
         shutil.copy2(APP_DIR / "extension" / name, extension_dir / name)
+    shutil.copytree(APP_DIR / "extension" / "icons", extension_dir / "icons", dirs_exist_ok=True)
     config_file = extension_dir / "config.js"
     config_file.write_text(f'export const PAIR_KEY = "{key}";\n', encoding="ascii")
     os.chmod(config_file, 0o600)
