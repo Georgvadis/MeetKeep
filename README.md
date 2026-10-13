@@ -4,7 +4,10 @@ Vidloader — утилита для скачивания видео по ссы�
 
 ## Скачать
 
-Готовые версии для **Windows x64** (один файл `Vidloader.exe`) и **macOS Apple Silicon** (приложение `Vidloader.app`) доступны в [Releases](https://github.com/Georgvadis/Vidloader/releases/latest). Python и FFmpeg отдельно устанавливать не нужно.
+- **Windows x64:** [Vidloader.exe](https://github.com/Georgvadis/Vidloader/releases/latest/download/Vidloader.exe) — один файл, запускается сразу.
+- **macOS Apple Silicon:** [Vidloader-macOS.zip](https://github.com/Georgvadis/Vidloader/releases/latest/download/Vidloader-macOS.zip) — распакуйте и перенесите `Vidloader.app` в «Программы».
+
+Ссылки всегда ведут на последнюю версию; все версии — в [Releases](https://github.com/Georgvadis/Vidloader/releases). Python и FFmpeg отдельно устанавливать не нужно.
 
 Приложения не подписаны. На Windows SmartScreen может предупредить о неизвестном издателе: **«Подробнее» → «Выполнить в любом случае»**. На macOS при первом запуске откройте **Системные настройки → Конфиденциальность и безопасность** и нажмите **«Всё равно открыть»**.
 
@@ -42,4 +45,11 @@ Vidloader — утилита для скачивания видео по ссы�
 - Windows: `build-windows.bat` → `dist\Vidloader.exe`.
 - macOS: `build-mac.command` → `dist/Vidloader.app`.
 
-GitHub Actions собирает обе версии в workflow [Build apps](.github/workflows/build.yml).
+GitHub Actions собирает обе версии в workflow [Build apps](.github/workflows/build.yml) при каждом изменении в `main`.
+
+## Выпуск новой версии
+
+1. Откройте [Actions → Build apps](https://github.com/Georgvadis/Vidloader/actions/workflows/build.yml) и нажмите **Run workflow**.
+2. В поле версии укажите новый номер, например `v0.3.0`, и запустите.
+
+Workflow соберёт обе версии, создаст тег и релиз «Vidloader 0.3.0» со списком изменений и приложит `Vidloader.exe` и `Vidloader-macOS.zip`. То же произойдёт при пуше тега: `git tag v0.3.0 && git push origin v0.3.0`.
